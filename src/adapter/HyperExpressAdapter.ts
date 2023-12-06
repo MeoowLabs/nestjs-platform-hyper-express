@@ -10,7 +10,10 @@ import { RequestHandler, VersionValue } from '@nestjs/common/interfaces';
 import { CorsOptions, CorsOptionsDelegate } from '@nestjs/common/interfaces/external/cors-options.interface';
 import { AbstractHttpAdapter } from '@nestjs/core';
 import cors from 'cors';
-import { Request, Response, RouteSpreadableArguments, Router, Server } from 'hyper-express';
+import { LiveFile, Request, Response, RouteSpreadableArguments, Router, Server } from 'hyper-express';
+import LiveDirectory from 'live-directory';
+
+import { LiveDirectoryOptions } from './LiveDirectoryOptions';
 
 const DEFAULT_PATH: string = '';
 
@@ -29,7 +32,7 @@ export class HyperExpressAdapter<
   public override async init(): Promise<void> {}
 
   public override use(...args: any[]): void {
-    this.httpServer.use(args);
+    this.instance.use(args);
   }
 
   public override get(handler: RequestHandler<TRequest, TResponse>): void;
@@ -141,9 +144,33 @@ export class HyperExpressAdapter<
     };
   }
 
-  public override useStaticAssets(..._args: any[]) {}
+  public override useStaticAssets(path: string, options: LiveDirectoryOptions): void {
+    const liveDirectory: LiveDirectory = new LiveDirectory(options.directory, {
+      cache: options.cache,
+      filter: options.filter,
+      static: options.static,
+      watcher: options.watcher,
+    });
 
-  public override setViewEngine(_engine: string) {}
+    this.instance.get(path, (request: Request, response: Response): void => {
+      const resolvedPath: string = request.path.replace(path, '');
+      const file: LiveFile | undefined = liveDirectory.get(resolvedPath) as LiveFile | undefined;
+
+      if (file !== undefined) {
+        const content: Buffer = file.content;
+
+        if (content instanceof Buffer) {
+          response.type(file.extension).send(content);
+        } else {
+          response.type(file.extension).stream(content);
+        }
+      } else {
+        response.status(404).send();
+      }
+    });
+  }
+
+  public override setViewEngine(_engine: string): void {}
 
   public override getRequestHostname(request: TRequest): string {
     return request.hostname;
@@ -196,7 +223,9 @@ export class HyperExpressAdapter<
     response.end(message);
   }
 
-  public override render(_response: TResponse, _view: string, _options: any): void {}
+  public override render(response: TResponse, view: string, _options: any): void {
+    response.html(view);
+  }
 
   public override redirect(response: TResponse, statusCode: number, url: string): void {
     this.status(response, statusCode);
@@ -227,7 +256,7 @@ export class HyperExpressAdapter<
 
   public override createMiddlewareFactory(
     _requestMethod: RequestMethod,
-  ): ((path: string, callback: (Function)) => any) | Promise<(path: string, callback: Function) => any> {
+  ): ((path: string, callback: Function) => any) | Promise<(path: string, callback: Function) => any> {
     throw new Error('Method not implemented.');
   }
 
@@ -259,10 +288,12 @@ export class HyperExpressAdapter<
       requestHandler = handlerOrPath;
     }
 
-    hyperExpressHandler(path, async (request: Request, response: Response) => {
-      request.body = await request.json();
+    hyperExpressHandler(path, (request: Request, response: Response) => {
+      response.atomic(async () => {
+        request.body = await request.json();
 
-      requestHandler(request as TRequest, response as TResponse);
+        requestHandler(request as TRequest, response as TResponse);
+      });
     });
   }
 
