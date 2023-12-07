@@ -13,19 +13,19 @@ import cors from 'cors';
 import { LiveFile, Request, Response, RouteSpreadableArguments, Router, Server } from 'hyper-express';
 import LiveDirectory from 'live-directory';
 
+import { HyperExpressServerWrapper } from './HyperExpressServerWrapper';
 import { LiveDirectoryOptions } from './LiveDirectoryOptions';
 
 const DEFAULT_PATH: string = '';
 
 export class HyperExpressAdapter<
-  TInstance extends Server = Server,
   TRequest extends Request = Request,
   TResponse extends Response = Response,
-> extends AbstractHttpAdapter<any, TRequest, TResponse> {
+> extends AbstractHttpAdapter<HyperExpressServerWrapper, TRequest, TResponse> {
   readonly #logger: Logger = new Logger(HyperExpressAdapter.name);
-  protected declare instance: TInstance;
+  protected declare instance: Server;
 
-  public constructor(instance: TInstance) {
+  public constructor(instance: Server) {
     super(instance);
   }
 
@@ -138,36 +138,33 @@ export class HyperExpressAdapter<
   }
 
   public override initHttpServer(_options: NestApplicationOptions) {
-    this.httpServer = {
-      address: () => {},
-      once: () => {},
-    };
+    this.httpServer = new HyperExpressServerWrapper(this.instance);
   }
 
   public override useStaticAssets(path: string, options: LiveDirectoryOptions): void {
-    const liveDirectory: LiveDirectory = new LiveDirectory(options.directory, {
-      cache: options.cache,
-      filter: options.filter,
-      static: options.static,
-      watcher: options.watcher,
-    });
+    // const liveDirectory: LiveDirectory = new LiveDirectory(options.directory, {
+    //   cache: options.cache,
+    //   filter: options.filter,
+    //   static: options.static,
+    //   watcher: options.watcher,
+    // });
 
-    this.instance.get(path, (request: Request, response: Response): void => {
-      const resolvedPath: string = request.path.replace(path, '');
-      const file: LiveFile | undefined = liveDirectory.get(resolvedPath) as LiveFile | undefined;
+    // this.instance.get(path, (request: Request, response: Response): void => {
+    //   const resolvedPath: string = request.path.replace(path, '');
+    //   const file: LiveFile | undefined = liveDirectory.get(resolvedPath) as LiveFile | undefined;
 
-      if (file !== undefined) {
-        const content: Buffer = file.content;
+    //   if (file !== undefined) {
+    //     const content: Buffer = file.content;
 
-        if (content instanceof Buffer) {
-          response.type(file.extension).send(content);
-        } else {
-          response.type(file.extension).stream(content);
-        }
-      } else {
-        response.status(404).send();
-      }
-    });
+    //     if (content instanceof Buffer) {
+    //       response.type(file.extension).send(content);
+    //     } else {
+    //       response.type(file.extension).stream(content);
+    //     }
+    //   } else {
+    //     response.status(404).send();
+    //   }
+    // });
   }
 
   public override setViewEngine(_engine: string): void {}
